@@ -167,3 +167,43 @@ TEST(ThreadTest, singleResponseSingleVsMulti) {
     EXPECT_GT(responseSingleThreadLatency, responseMultiThreadLatency);
     EXPECT_EQ(responseSingleThread, responseMultiThread);
 }
+
+TEST(ThreadTest, exceptionsOnThreads) {
+    spdlog::info("Test that throws exceptions should be directed to main thread");
+    auto threadPool = ResultThreadPool(4);
+    std::vector<int> values;
+    int vectorSize = 1000;
+    int errorInteger = 1000000;
+
+    for (int i = 1; i < vectorSize; i++) {
+        if (i == vectorSize / 2) {
+            values.push_back(errorInteger);
+        }
+        values.push_back(i); 
+    }
+    
+    spdlog::info("Test that throws exceptions running in a thread");
+    auto exceptionTask = [errorInteger](std::vector<int>::iterator begin, std::vector<int>::iterator end) -> std::vector<int> {
+        std::vector<int> responses;
+        for (auto it = begin; it != end; it++) {
+            if (*it == errorInteger) {
+                spdlog::info("exceptionTask generates exception!");
+                throw std::runtime_error("I have an issue!");
+            }
+            if (*it % 2 == 0) {
+                responses.push_back(*it);
+            }
+        }
+        return responses;
+    };
+
+    EXPECT_THROW(exceptionTask(values.begin(), values.end()), std::runtime_error);
+    
+    spdlog::info("Test that throws exceptions running in multi thread");
+
+    auto exceptionOnThreads = [&]() {
+        auto val = threadPool.parallelizeCollectionReturnMany<decltype(values), decltype(exceptionTask), std::vector<int> >(values, exceptionTask);
+    };
+
+    EXPECT_THROW(exceptionOnThreads(), std::runtime_error);
+}
